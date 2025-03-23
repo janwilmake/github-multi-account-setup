@@ -1,13 +1,14 @@
-# Managing Multiple GitHub Accounts
+# Comprehensive Guide to Managing Multiple GitHub Accounts
 
-This guide will help you set up your development environment to work seamlessly with multiple GitHub accounts, avoiding authentication headaches and ensuring your commits are properly attributed.
+This guide will help you set up your development environment to work seamlessly with multiple GitHub accounts (e.g., personal and work), avoiding authentication headaches and ensuring your commits are properly attributed.
 
 ## The Problem
 
-When working with multiple GitHub accounts (e.g., personal and work), you face two main challenges:
+When working with multiple GitHub accounts, you face several challenges:
 
 1. **Authentication**: GitHub needs to know which account you're using when you clone, pull, or push code.
 2. **Author Attribution**: Your commits need to be attributed to the correct user name and email for each account.
+3. **CLI Operations**: When using the GitHub CLI, you need an easy way to switch between accounts.
 
 These challenges can lead to frustrating workflows:
 
@@ -16,7 +17,7 @@ These challenges can lead to frustrating workflows:
 - Commits being attributed to the wrong identity
 - Needing to manually configure each repository
 
-## Installing and Setting Up Git Credential Manager (GCM)
+## Part 1: Git Credential Manager (GCM) Setup
 
 Git Credential Manager (GCM) helps solve the authentication problem by securely storing your credentials.
 
@@ -80,7 +81,7 @@ git clone https://github.com/owner/repo.git
 git credential reject host=github.com protocol=https
 ```
 
-## Ensuring Automatic Setting of Author Using users.txt
+## Part 2: Automatic Author Attribution Setup
 
 To ensure your commits are properly attributed to the correct GitHub identity, we'll set up a system that automatically configures the right user name and email based on the repository owner.
 
@@ -100,8 +101,10 @@ default.name=Your Default Name
 default.email=default@example.com
 username1.name=First Account Name
 username1.email=first@example.com
+username1.token=ghp_your_first_account_token
 username2.name=Second Account Name
 username2.email=second@example.com
+username2.token=ghp_your_second_account_token
 # Add more accounts as needed
 ```
 
@@ -283,7 +286,95 @@ git config --global init.templateDir ~/.git-templates
      git init
      ```
 
-## Transferring Repositories Between Accounts
+## Part 3: GitHub CLI Multi-Account Setup
+
+The GitHub CLI (`gh`) is a powerful tool for interacting with GitHub from the command line. Here's how to set it up for multiple accounts using the same users.txt file we've already created.
+
+### Prerequisites
+
+- GitHub CLI installed (`brew install gh` on macOS)
+- The users.txt file already set up with tokens (as shown in Part 2)
+
+### How to Get Personal Access Tokens
+
+1. Go to GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens
+2. Create a new token with the necessary permissions (typically repo, read:org, and workflow)
+3. Add the token to your users.txt file as shown in Part 2
+
+### Create a Custom `gh` Function
+
+Add the following function to your shell configuration file (`~/.bashrc` or `~/.zshrc`):
+
+```bash
+# Override the gh command to support multiple accounts
+gh() {
+  # Path to the users configuration file
+  USERS_FILE="$HOME/.git-config/users.txt"
+
+  # Check if first argument is provided and exists in users.txt
+  if [ -n "$1" ] && grep -q "^$1\.token=" "$USERS_FILE"; then
+    # Extract the username and remove it from the arguments
+    GITHUB_USERNAME="$1"
+    shift
+
+    # Get the authentication token for the specified username
+    TOKEN=$(grep "^$GITHUB_USERNAME.token=" "$USERS_FILE" | cut -d'=' -f2)
+
+    if [ -z "$TOKEN" ]; then
+      echo "Error: No token found for username '$GITHUB_USERNAME' in $USERS_FILE"
+      return 1
+    fi
+
+    echo "Using token for $GITHUB_USERNAME"
+    # Use the token for this gh command
+    GH_TOKEN="$TOKEN" command gh "$@"
+  else
+    # If first arg isn't a username in our file, use gh normally
+    command gh "$@"
+  fi
+}
+```
+
+After adding the function to your shell configuration file, reload it:
+
+```bash
+source ~/.bashrc  # or source ~/.zshrc
+```
+
+### Usage with GitHub CLI
+
+The function allows you to use the `gh` command in two ways:
+
+1. **With a specific GitHub account**
+
+```bash
+gh username1 repo list
+```
+
+This will use the token for "username1" from your users.txt file.
+
+2. **Normal `gh` usage**
+
+```bash
+gh repo list
+```
+
+This will use the default behavior (whoever is currently logged in with `gh auth login`).
+
+### Examples
+
+```bash
+# Create a new repository as a specific user
+gh username1 repo create --public my-new-repo
+
+# List issues for a specific repository as another user
+gh username2 issue list --repo username2/some-repo
+
+# Create a pull request as a specific user
+gh username1 pr create --title "New feature" --body "Description"
+```
+
+## Part 4: Transferring Repositories Between Accounts
 
 ### Option 1: GitHub's Transfer Feature
 
@@ -357,6 +448,36 @@ If your commits are being attributed to the wrong user:
    git remote -v
    ```
 
+### GitHub CLI Issues
+
+If you see an error like:
+
+```
+Error: No token found for username 'username1' in /path/to/users.txt
+```
+
+Check that:
+
+1. The username is spelled correctly in both your command and users.txt
+2. The token entry exists in the format `username1.token=ghp_token`
+3. There are no spaces before or after the values
+4. The users.txt file is in the correct location
+
+If the command seems to ignore your username and uses the default account:
+
+1. Make sure you reloaded your shell configuration
+2. Check that the grep command is finding your username in the file:
+   ```bash
+   grep "^username1\.token=" "$HOME/.git-config/users.txt"
+   ```
+3. Try adding `set -x` before the function in your shell config to debug
+
+## Security Notes
+
+- Personal access tokens should be treated like passwords
+- Consider using fine-grained tokens with the minimum necessary permissions
+- Review and rotate your tokens regularly
+
 ---
 
-With this setup, you should be able to seamlessly work with multiple GitHub accounts without constantly dealing with authentication or attribution issues.
+With this setup, you should be able to seamlessly work with multiple GitHub accounts without constantly dealing with authentication or attribution issues, using both Git and the GitHub CLI.
